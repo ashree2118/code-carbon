@@ -1,0 +1,122 @@
+[
+  {
+    "id": "GCP-001",
+    "title": "Optimize Nested Loops and Repeated Calculations",
+    "category": "Loops & Iteration",
+    "content": "Avoid quadratic O(N^2) nested loops by hoisting invariant computations out of loops, pre-calculating constant values, and leveraging set or dictionary lookups for O(1) membership tests."
+  },
+  {
+    "id": "GCP-002",
+    "title": "Use NumPy Vectorization Over Python Loops",
+    "category": "Vectorization & Arrays",
+    "content": "Replace explicit Python for-loops over arrays with NumPy vectorized operations or SciPy routines. Vectorized operations run in compiled C code and utilize CPU SIMD instructions to dramatically reduce CPU cycles and energy."
+  },
+  {
+    "id": "GCP-003",
+    "title": "Cache Expensive Function Results",
+    "category": "Caching & Memoization",
+    "content": "Use functools.lru_cache or functools.cache for deterministic or pure functions with expensive computations. Caching eliminates redundant CPU work across repetitive execution paths."
+  },
+  {
+    "id": "GCP-004",
+    "title": "Use Generators for Large Data Streams",
+    "category": "Memory Management",
+    "content": "Prefer Python generator expressions and yield keywords over list comprehensions when processing large datasets. Generators compute elements lazily on-demand, minimizing RAM footprint and cache thrashing."
+  },
+  {
+    "id": "GCP-005",
+    "title": "Stream Large File I/O in Chunks",
+    "category": "File I/O & Streams",
+    "content": "Process large files line-by-line or in fixed-size chunk buffers instead of loading entire file contents into memory with file.read(), preventing high peak memory usage and swap overhead."
+  },
+  {
+    "id": "GCP-006",
+    "title": "Batch Database Operations and Bulk Writes",
+    "category": "Database & Batching",
+    "content": "Combine multiple individual database row inserts or API requests into single bulk/batch queries (e.g. executemany or bulk_create). Batching reduces network round-trip latency and CPU context switching."
+  },
+  {
+    "id": "GCP-007",
+    "title": "Select Specific Columns in Database Queries",
+    "category": "Database Queries",
+    "content": "Avoid SELECT * in SQL queries; specify only the columns required by your application logic. Fetching fewer bytes over the wire conserves database CPU, memory, and network transmission energy."
+  },
+  {
+    "id": "GCP-008",
+    "title": "Efficient String Concatenation",
+    "category": "String Handling",
+    "content": "Avoid using the '+' operator in loops for string concatenation as strings are immutable in Python and cause repetitive memory reallocations. Accumulate strings in a list and call ''.join(list) or use io.StringIO."
+  },
+  {
+    "id": "GCP-009",
+    "title": "Short-Circuit Evaluation with Generators",
+    "category": "Lazy Evaluation",
+    "content": "Use any() and all() with generator expressions rather than building full lists. Short-circuiting halts evaluation as soon as the truth condition is determined, saving computational steps."
+  },
+  {
+    "id": "GCP-010",
+    "title": "Fast Membership Testing with Sets and Dicts",
+    "category": "Data Structures",
+    "content": "Convert lists to sets or dicts for repeated 'in' membership testing. Searching a list is O(N) linear time, whereas hash-based sets perform lookups in average O(1) constant time."
+  },
+  {
+    "id": "GCP-011",
+    "title": "Compile Regular Expressions Once",
+    "category": "Object Reuse",
+    "content": "Compile regex patterns using re.compile() at module scope rather than invoking re.search() or re.match() repeatedly inside tight loops, eliminating re-parsing overhead."
+  },
+  {
+    "id": "GCP-012",
+    "title": "Avoid iterrows() in Pandas",
+    "category": "Pandas Vectorization",
+    "content": "Never use DataFrame.iterrows() for row-by-row iteration in Pandas. Use vectorized Series operations, DataFrame.apply(), or NumPy arrays for orders-of-magnitude faster and more energy-efficient execution."
+  },
+  {
+    "id": "GCP-013",
+    "title": "Lazy String Interpolation in Logging",
+    "category": "Logging & Diagnostics",
+    "content": "Pass log message arguments as lazy parameters (logger.debug('Value %s', val)) instead of pre-formatting with f-strings or '%'. This skips string formatting entirely when the log level is disabled."
+  },
+  {
+    "id": "GCP-014",
+    "title": "Efficient Binary Serialization",
+    "category": "Data Serialization",
+    "content": "Use high-performance binary formats like PyArrow, Feather, MessagePack, or Protocol Buffers for large structured data interchange instead of verbose text JSON or XML."
+  },
+  {
+    "id": "GCP-015",
+    "title": "Reuse HTTP Connections with Requests Sessions",
+    "category": "Network & API",
+    "content": "Reuse TCP and TLS connection pools across outbound HTTP requests using requests.Session() or httpx.Client(), eliminating repeated socket handshakes and certificate validations."
+  },
+  {
+    "id": "GCP-016",
+    "title": "Reorder Conditional Logic for Early Failure",
+    "category": "Algorithms & Complexity",
+    "content": "Order Boolean expression operands so that lightweight, cheap checks (e.g., integer equality) evaluate before expensive function calls or disk/network checks."
+  },
+  {
+    "id": "GCP-017",
+    "title": "Use Local Variables in Hot Loops",
+    "category": "Python Runtime Optimization",
+    "content": "Assign global functions or module attributes to local variables inside hot loops (e.g. append = my_list.append). Local variable lookups in Python bytecode are faster than global or attribute resolution."
+  },
+  {
+    "id": "GCP-018",
+    "title": "Resource Cleanup with Context Managers",
+    "category": "Resource Management",
+    "content": "Always use 'with' statements for files, sockets, and locks to ensure resources are released immediately after use, preventing file descriptor leaks and system resource degradation."
+  },
+  {
+    "id": "GCP-019",
+    "title": "Compress Large Network Payloads",
+    "category": "Network & Compression",
+    "content": "Enable GZIP or Brotli compression for large network payloads to minimize data transfer size, conserving network bandwidth and reduce energy usage across routers and switches."
+  },
+  {
+    "id": "GCP-020",
+    "title": "Asynchronous Non-Blocking I/O",
+    "category": "Concurrency & I/O",
+    "content": "Use asyncio or async HTTP/DB drivers for I/O-bound tasks to allow a single CPU thread to serve concurrent operations without wasting CPU cycles blocked in thread sleep or wait states."
+  }
+]

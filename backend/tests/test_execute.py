@@ -1,6 +1,7 @@
 import io
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,13 +20,14 @@ def _upload(filename: str, content: bytes, content_type: str = "text/x-python"):
 
 
 def test_valid_python_file_executes_successfully():
-    response = _upload("hello.py", b"print('hello from phase 2')\n")
+    response = _upload("hello.py", b"print('hello from phase 3')\n")
     assert response.status_code == 200
     body = response.json()
     assert body["success"] is True
     assert body["exit_code"] == 0
     assert body["timed_out"] is False
     assert body["execution_time_seconds"] >= 0
+    assert "carbon" in body
 
 
 def test_stdout_is_returned():
@@ -54,6 +56,7 @@ def test_python_error_returns_stderr_and_nonzero_exit():
     assert body["success"] is False
     assert body["exit_code"] != 0
     assert "intentional failure" in body["stderr"]
+    assert "carbon" in body
 
 
 def test_long_running_script_is_stopped_by_timeout(monkeypatch: pytest.MonkeyPatch):
@@ -65,6 +68,7 @@ def test_long_running_script_is_stopped_by_timeout(monkeypatch: pytest.MonkeyPat
     assert body["timed_out"] is True
     assert body["exit_code"] is None
     assert "timed out" in body["stderr"].lower()
+    assert "carbon" in body
 
 
 def test_temporary_files_are_cleaned_up(monkeypatch: pytest.MonkeyPatch):
@@ -83,3 +87,38 @@ def test_temporary_files_are_cleaned_up(monkeypatch: pytest.MonkeyPatch):
     assert created
     for path in created:
         assert not Path(path).exists()
+
+
+def test_codecarbon_failure_returns_null_carbon_gracefully(monkeypatch: pytest.MonkeyPatch):
+    def failing_tracker(*args, **kwargs):
+        raise RuntimeError("CodeCarbon tracking unavailable")
+
+    monkeypatch.setattr(
+        "app.services.measurement_service.EmissionsTracker", failing_tracker
+    )
+
+    response = _upload("hello.py", b"print('hello gracefully')\n")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["carbon"] is None
+
+
+def test_codecarbon_metrics_returned(monkeypatch: pytest.MonkeyPatch):
+    mock_tracker = MagicMock()
+    mock_tracker.stop.return_value = 0.00005
+    mock_tracker.final_emissions_data.energy_consumed = 0.00012
+    mock_tracker.final_emissions_data.emissions = 0.00005
+
+    monkeypatch.setattr(
+        "app.services.measurement_service.EmissionsTracker",
+        lambda *args, **kwargs: mock_tracker,
+    )
+
+    response = _upload("metrics.py", b"print('measured')\n")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["carbon"] is not None
+    assert body["carbon"]["energy_kwh"] == 0.00012
+    assert body["carbon"]["co2_kg"] == 0.00005

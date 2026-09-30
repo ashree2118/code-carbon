@@ -2,7 +2,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.config import settings
 from app.schemas import ExecuteResponse
-from app.services.script_runner import run_python_script
+from app.services.measurement_service import measure_script_execution
 
 router = APIRouter()
 
@@ -24,7 +24,7 @@ async def execute_python(file: UploadFile = File(...)) -> ExecuteResponse:
     content = await file.read()
     _validate_python_file(file.filename, content)
 
-    result = run_python_script(content, settings.execution_timeout_seconds)
+    result, carbon = measure_script_execution(content, settings.execution_timeout_seconds)
     return ExecuteResponse(
         success=result.success,
         stdout=result.stdout,
@@ -32,4 +32,6 @@ async def execute_python(file: UploadFile = File(...)) -> ExecuteResponse:
         exit_code=result.exit_code,
         execution_time_seconds=result.execution_time_seconds,
         timed_out=result.timed_out,
+        carbon=carbon,
     )
+

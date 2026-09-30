@@ -19,6 +19,12 @@ class Settings:
     execution_timeout_seconds: float = float(
         os.getenv("EXECUTION_TIMEOUT_SECONDS", "5")
     )
+    chroma_db_dir: str = os.getenv("CHROMA_DB_DIR", "./chroma_db")
+    embedding_model_name: str = os.getenv(
+        "EMBEDDING_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2"
+    )
+    rag_top_k: int = int(os.getenv("RAG_TOP_K", "3"))
 
 
 settings = Settings()
+

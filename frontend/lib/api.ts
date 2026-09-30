@@ -6,6 +6,11 @@ export type HealthResponse = {
   message: string;
 };
 
+export type CarbonMetrics = {
+  energy_kwh: number | null;
+  co2_kg: number | null;
+};
+
 export type ExecuteResponse = {
   success: boolean;
   stdout: string;
@@ -13,7 +18,22 @@ export type ExecuteResponse = {
   exit_code: number | null;
   execution_time_seconds: number;
   timed_out: boolean;
+  carbon: CarbonMetrics | null;
 };
+
+export type PracticeResult = {
+  title: string;
+  content: string;
+  category: string;
+  relevance_score: number;
+};
+
+export type RAGSearchResponse = {
+  query: string;
+  results: PracticeResult[];
+};
+
+
 
 export class ApiError extends Error {
   status: number;
@@ -68,3 +88,23 @@ export async function executePython(file: File): Promise<ExecuteResponse> {
 
   return response.json();
 }
+
+export async function searchRAGPractices(
+  query: string,
+  topK: number = 3
+): Promise<RAGSearchResponse> {
+  const response = await fetch(`${API_BASE_URL}/rag/search`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query, top_k: topK }),
+  });
+
+  if (!response.ok) {
+    throw new ApiError(await readErrorMessage(response), response.status);
+  }
+
+  return response.json();
+}
+
