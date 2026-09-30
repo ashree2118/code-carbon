@@ -13,9 +13,9 @@ from app.schemas import DetectedPattern
 PATTERN_QUERIES: dict[str, str] = {
     "nested_loop": "nested loops over collections, replace with dict or set lookups",
     "linear_search_in_loop": "membership test x in list, list.index or list.count inside a loop",
-    "string_concat_in_loop": "string concatenation with += inside a loop",
+    "string_concat_in_loop": "string concatenation with += inside a loop, build with join",
     "append_loop": "list.append in a loop could be a list comprehension",
-    "invariant_call_in_loop": "same computation such as sorted or sum repeated inside a loop",
+    "invariant_call_in_loop": "loop-invariant computation repeated on every iteration, compute it once before the loop",
     "file_io_in_loop": "file opened, read or written inside a loop",
     "regex_in_loop": "re.search or re.compile with a pattern string inside a loop",
     "uncached_recursion": "recursive function called repeatedly with the same arguments",

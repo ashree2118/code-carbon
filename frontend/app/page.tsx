@@ -136,7 +136,7 @@ function HealthLine({ health }: { health: Health }) {
   if (!health.data.llm_configured) {
     return (
       <p className="text-sm text-amber-800">
-        Backend is running, but the LLM is not configured. Set ANTHROPIC_API_KEY in backend/.env
+        Backend is running, but the LLM is not configured. Set GROQ_API_KEY in backend/.env
         to enable analysis. Running and measuring still works.
       </p>
     );

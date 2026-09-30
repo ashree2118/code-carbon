@@ -15,7 +15,7 @@
     "id": "GCP-003",
     "title": "Hoist Loop-Invariant Work Out of Loops",
     "category": "Loops",
-    "content": "Work that gives the same result on every iteration, such as `len(data)`, `sorted(items)`, `math.sqrt(2)`, `set(allowed)` or a config lookup, should be computed once before the loop and stored in a local variable. Repeating it wastes CPU cycles on every pass."
+    "content": "Work that gives the same result on every iteration, such as `len(data)`, `sorted(items)`, `sum(values)`, `math.sqrt(2)`, `set(allowed)` or a config lookup, is loop-invariant. Compute it once before the loop and store it in a local variable. Repeating the same computation on every pass wastes CPU cycles."
   },
   {
     "id": "GCP-004",
@@ -27,7 +27,7 @@
     "id": "GCP-005",
     "title": "Build Strings with str.join",
     "category": "Strings",
-    "content": "Strings are immutable, so `s += piece` in a loop can copy the whole string on every iteration, which is O(n^2) in the worst case. Collect pieces in a list and call `''.join(pieces)` once, or write to `io.StringIO`."
+    "content": "String concatenation with `s += piece` or `s = s + piece` in a loop can copy the whole string on every iteration, because strings are immutable. This is O(n^2) in the worst case. Collect pieces in a list and call `''.join(pieces)` once, or write to `io.StringIO`."
   },
   {
     "id": "GCP-006",
@@ -62,7 +62,7 @@
   {
     "id": "GCP-011",
     "title": "Compile Regular Expressions Once",
-    "category": "Strings",
+    "category": "Regular Expressions",
     "content": "Calling `re.search`, `re.match`, `re.sub` or `re.findall` with a pattern string inside a loop re-checks the pattern cache every time, and `re.compile` inside a loop recompiles it. Compile the pattern once with `re.compile` outside the loop and reuse the compiled object."
   },
   {
