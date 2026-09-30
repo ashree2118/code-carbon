@@ -1,122 +1,128 @@
 [
   {
     "id": "GCP-001",
-    "title": "Optimize Nested Loops and Repeated Calculations",
-    "category": "Loops & Iteration",
-    "content": "Avoid quadratic O(N^2) nested loops by hoisting invariant computations out of loops, pre-calculating constant values, and leveraging set or dictionary lookups for O(1) membership tests."
+    "title": "Replace Nested Loops with Lookups",
+    "category": "Algorithms",
+    "content": "Nested loops over two collections cost O(n*m) steps, often to match items between them. Build a dict or set from one collection once, then loop over the other and look up matches in O(1). Instead of `for a in orders: for c in customers: if a.cid == c.id`, build `by_id = {c.id: c for c in customers}` and use `by_id.get(a.cid)`. Fewer CPU steps means less energy."
   },
   {
     "id": "GCP-002",
-    "title": "Use NumPy Vectorization Over Python Loops",
-    "category": "Vectorization & Arrays",
-    "content": "Replace explicit Python for-loops over arrays with NumPy vectorized operations or SciPy routines. Vectorized operations run in compiled C code and utilize CPU SIMD instructions to dramatically reduce CPU cycles and energy."
+    "title": "Use Sets or Dicts for Membership Tests",
+    "category": "Data Structures",
+    "content": "`x in some_list`, `list.index(x)` and `list.count(x)` scan the whole list each time (O(n)). Inside a loop this becomes O(n^2). Convert the list to a set or dict once before the loop so each lookup is O(1) on average. Use `collections.Counter` instead of calling `.count()` for every item."
   },
   {
     "id": "GCP-003",
-    "title": "Cache Expensive Function Results",
-    "category": "Caching & Memoization",
-    "content": "Use functools.lru_cache or functools.cache for deterministic or pure functions with expensive computations. Caching eliminates redundant CPU work across repetitive execution paths."
+    "title": "Hoist Loop-Invariant Work Out of Loops",
+    "category": "Loops",
+    "content": "Work that gives the same result on every iteration, such as `len(data)`, `sorted(items)`, `math.sqrt(2)`, `set(allowed)` or a config lookup, should be computed once before the loop and stored in a local variable. Repeating it wastes CPU cycles on every pass."
   },
   {
     "id": "GCP-004",
-    "title": "Use Generators for Large Data Streams",
-    "category": "Memory Management",
-    "content": "Prefer Python generator expressions and yield keywords over list comprehensions when processing large datasets. Generators compute elements lazily on-demand, minimizing RAM footprint and cache thrashing."
+    "title": "Use Comprehensions Instead of Append Loops",
+    "category": "Loops",
+    "content": "A loop whose only job is `result.append(expr)` is slower than a list comprehension `[expr for x in items]`, which runs in optimized bytecode without repeated method lookups. The same applies to dict and set comprehensions. For simple transforms, built-ins like `map` or `filter` are also fine."
   },
   {
     "id": "GCP-005",
-    "title": "Stream Large File I/O in Chunks",
-    "category": "File I/O & Streams",
-    "content": "Process large files line-by-line or in fixed-size chunk buffers instead of loading entire file contents into memory with file.read(), preventing high peak memory usage and swap overhead."
+    "title": "Build Strings with str.join",
+    "category": "Strings",
+    "content": "Strings are immutable, so `s += piece` in a loop can copy the whole string on every iteration, which is O(n^2) in the worst case. Collect pieces in a list and call `''.join(pieces)` once, or write to `io.StringIO`."
   },
   {
     "id": "GCP-006",
-    "title": "Batch Database Operations and Bulk Writes",
-    "category": "Database & Batching",
-    "content": "Combine multiple individual database row inserts or API requests into single bulk/batch queries (e.g. executemany or bulk_create). Batching reduces network round-trip latency and CPU context switching."
+    "title": "Prefer Built-in Functions Over Manual Loops",
+    "category": "Built-ins",
+    "content": "Built-ins such as `sum`, `min`, `max`, `sorted`, `any`, `all`, `enumerate`, `zip` and `collections.Counter` are implemented in C and do the same work as hand-written Python loops with far fewer interpreter steps. Replace manual accumulator loops (`total = 0; for x in xs: total += x`) with the matching built-in."
   },
   {
     "id": "GCP-007",
-    "title": "Select Specific Columns in Database Queries",
-    "category": "Database Queries",
-    "content": "Avoid SELECT * in SQL queries; specify only the columns required by your application logic. Fetching fewer bytes over the wire conserves database CPU, memory, and network transmission energy."
+    "title": "Use Generators for One-Pass Aggregation",
+    "category": "Lazy Evaluation",
+    "content": "`sum([x * x for x in xs])` builds a full list in memory before summing. `sum(x * x for x in xs)` streams values without the temporary list. With `any()` and `all()`, a generator also stops early as soon as the answer is known, while a list comprehension always computes every item."
   },
   {
     "id": "GCP-008",
-    "title": "Efficient String Concatenation",
-    "category": "String Handling",
-    "content": "Avoid using the '+' operator in loops for string concatenation as strings are immutable in Python and cause repetitive memory reallocations. Accumulate strings in a list and call ''.join(list) or use io.StringIO."
+    "title": "Cache Results of Repeated Pure Function Calls",
+    "category": "Caching",
+    "content": "Recursive functions like naive Fibonacci call themselves with the same arguments many times, which grows exponentially. Decorate deterministic functions with `functools.lru_cache` or `functools.cache`, or rewrite them iteratively. The same applies to any expensive pure function called repeatedly with the same inputs."
   },
   {
     "id": "GCP-009",
-    "title": "Short-Circuit Evaluation with Generators",
-    "category": "Lazy Evaluation",
-    "content": "Use any() and all() with generator expressions rather than building full lists. Short-circuiting halts evaluation as soon as the truth condition is determined, saving computational steps."
+    "title": "Open Files Once, Not Inside Loops",
+    "category": "File I/O",
+    "content": "Opening, reading or writing a file inside a loop repeats system calls and disk access on every iteration. Open the file once outside the loop, read what you need once, and batch writes (for example `f.writelines(lines)` or one `f.write('\\n'.join(lines))`). Always use `with` so the file is closed promptly."
   },
   {
     "id": "GCP-010",
-    "title": "Fast Membership Testing with Sets and Dicts",
-    "category": "Data Structures",
-    "content": "Convert lists to sets or dicts for repeated 'in' membership testing. Searching a list is O(N) linear time, whereas hash-based sets perform lookups in average O(1) constant time."
+    "title": "Stream Large Files Instead of Loading Them Whole",
+    "category": "File I/O",
+    "content": "`f.read()` and `f.readlines()` load the whole file into memory. For large files iterate over the file object line by line (`for line in f:`) or read fixed-size chunks. This keeps peak memory low and avoids swapping."
   },
   {
     "id": "GCP-011",
     "title": "Compile Regular Expressions Once",
-    "category": "Object Reuse",
-    "content": "Compile regex patterns using re.compile() at module scope rather than invoking re.search() or re.match() repeatedly inside tight loops, eliminating re-parsing overhead."
+    "category": "Strings",
+    "content": "Calling `re.search`, `re.match`, `re.sub` or `re.findall` with a pattern string inside a loop re-checks the pattern cache every time, and `re.compile` inside a loop recompiles it. Compile the pattern once with `re.compile` outside the loop and reuse the compiled object."
   },
   {
     "id": "GCP-012",
-    "title": "Avoid iterrows() in Pandas",
-    "category": "Pandas Vectorization",
-    "content": "Never use DataFrame.iterrows() for row-by-row iteration in Pandas. Use vectorized Series operations, DataFrame.apply(), or NumPy arrays for orders-of-magnitude faster and more energy-efficient execution."
+    "title": "Vectorize Numeric Work with NumPy",
+    "category": "Vectorization",
+    "content": "Python loops over large numeric arrays run one element at a time in the interpreter. NumPy operations such as `arr * 2`, `arr.sum()` or `np.dot(a, b)` run in compiled code with SIMD instructions and use far less CPU time. Only worth it when the data is large and NumPy is already a dependency."
   },
   {
     "id": "GCP-013",
-    "title": "Lazy String Interpolation in Logging",
-    "category": "Logging & Diagnostics",
-    "content": "Pass log message arguments as lazy parameters (logger.debug('Value %s', val)) instead of pre-formatting with f-strings or '%'. This skips string formatting entirely when the log level is disabled."
+    "title": "Avoid Row-by-Row Iteration in Pandas",
+    "category": "Vectorization",
+    "content": "`DataFrame.iterrows()` and `itertuples()` loops, and `apply` with a Python function per row, are much slower than vectorized column operations such as `df['a'] * df['b']`, `df.groupby(...).sum()` or `np.where(...)`. Rewrite row loops as column expressions."
   },
   {
     "id": "GCP-014",
-    "title": "Efficient Binary Serialization",
-    "category": "Data Serialization",
-    "content": "Use high-performance binary formats like PyArrow, Feather, MessagePack, or Protocol Buffers for large structured data interchange instead of verbose text JSON or XML."
+    "title": "Sort Once and Use heapq or bisect",
+    "category": "Algorithms",
+    "content": "Sorting inside a loop repeats O(n log n) work. Sort once before the loop. To get the top k items use `heapq.nlargest(k, items)` instead of sorting everything. To keep a list sorted while inserting, use `bisect.insort` instead of appending and re-sorting."
   },
   {
     "id": "GCP-015",
-    "title": "Reuse HTTP Connections with Requests Sessions",
-    "category": "Network & API",
-    "content": "Reuse TCP and TLS connection pools across outbound HTTP requests using requests.Session() or httpx.Client(), eliminating repeated socket handshakes and certificate validations."
+    "title": "Use deque for Queue Operations",
+    "category": "Data Structures",
+    "content": "`list.pop(0)` and `list.insert(0, x)` shift every element, which is O(n) per call. Use `collections.deque` with `popleft()` and `appendleft()`, which are O(1). This matters for queues and breadth-first search."
   },
   {
     "id": "GCP-016",
-    "title": "Reorder Conditional Logic for Early Failure",
-    "category": "Algorithms & Complexity",
-    "content": "Order Boolean expression operands so that lightweight, cheap checks (e.g., integer equality) evaluate before expensive function calls or disk/network checks."
+    "title": "Avoid Unnecessary Copies of Data",
+    "category": "Memory",
+    "content": "Slicing (`items[1:]`), `list(x)`, `copy.deepcopy` and `+` on lists create new copies. Inside loops or recursion this multiplies memory use and CPU work. Pass indexes instead of slices, iterate directly over the original, and copy only when you truly need an independent object."
   },
   {
     "id": "GCP-017",
-    "title": "Use Local Variables in Hot Loops",
-    "category": "Python Runtime Optimization",
-    "content": "Assign global functions or module attributes to local variables inside hot loops (e.g. append = my_list.append). Local variable lookups in Python bytecode are faster than global or attribute resolution."
+    "title": "Exit Loops Early When the Answer Is Known",
+    "category": "Algorithms",
+    "content": "A search loop that keeps going after it finds its match wastes work. Use `break`, `return`, `any()`, or `next((x for x in xs if cond(x)), None)` to stop as soon as the result is known. Put cheap conditions before expensive ones in `and`/`or` expressions."
   },
   {
     "id": "GCP-018",
-    "title": "Resource Cleanup with Context Managers",
-    "category": "Resource Management",
-    "content": "Always use 'with' statements for files, sockets, and locks to ensure resources are released immediately after use, preventing file descriptor leaks and system resource degradation."
+    "title": "Batch Database Queries and Select Only Needed Columns",
+    "category": "Database",
+    "content": "Running one query per item inside a loop (the N+1 query problem) multiplies round trips. Fetch related rows in one query with `WHERE id IN (...)` or a join, write with `executemany` or bulk inserts, and select only the columns you use instead of `SELECT *`."
   },
   {
     "id": "GCP-019",
-    "title": "Compress Large Network Payloads",
-    "category": "Network & Compression",
-    "content": "Enable GZIP or Brotli compression for large network payloads to minimize data transfer size, conserving network bandwidth and reduce energy usage across routers and switches."
+    "title": "Reuse Network Connections and Batch Requests",
+    "category": "Network",
+    "content": "Creating a new HTTP connection for every request repeats TCP and TLS handshakes. Reuse a `requests.Session()` or `httpx.Client()`, call batch endpoints when the API offers them, and avoid calling the same URL repeatedly for data that does not change."
   },
   {
     "id": "GCP-020",
-    "title": "Asynchronous Non-Blocking I/O",
-    "category": "Concurrency & I/O",
-    "content": "Use asyncio or async HTTP/DB drivers for I/O-bound tasks to allow a single CPU thread to serve concurrent operations without wasting CPU cycles blocked in thread sleep or wait states."
+    "title": "Reduce Output and Logging in Hot Loops",
+    "category": "Logging and Output",
+    "content": "Calling `print` or logging on every iteration of a large loop turns cheap work into slow I/O. Collect results and print once, print a summary, or log at debug level with lazy arguments (`logger.debug('value %s', v)`) so disabled messages are never formatted."
+  },
+  {
+    "id": "GCP-021",
+    "title": "Serialize and Parse Data Once",
+    "category": "Serialization",
+    "content": "Calling `json.loads`, `json.dumps` or similar parsers on the same data inside a loop repeats expensive work. Parse once, keep the Python object, and serialize once at the end. For large data exchange, compact binary formats (for example MessagePack or Parquet) use less CPU and space than text JSON."
   }
 ]

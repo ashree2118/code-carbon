@@ -1,76 +1,107 @@
 # Carbon Footprint Optimizer for Code
 
-Web application for analyzing Python files for energy and carbon efficiency. Phase 2 adds Python file upload and sandboxed-enough local execution via FastAPI (without Docker).
+Upload a Python file.
+The app runs it, measures its energy and CO₂ with CodeCarbon, audits it for wasteful patterns, writes an optimized version, verifies that version, and measures it again.
+You then compare real measurements, not guesses.
+
+## How it works
+
+```
+Python file
+  → run in a subprocess + CodeCarbon measurement
+  → AST analysis (finds patterns such as nested loops or string += in a loop)
+  → RAG: retrieve matching green coding practices (ChromaDB + sentence-transformers)
+  → Auditor (LLM): structured findings, no code changes
+  → Optimizer (LLM): targeted changes for those findings
+  → Verifier: code changed, compiles, runs, prints the same output
+  → run original and optimized alternately, measured the same way
+  → comparison of medians (changes under 5% are reported as "no clear change")
+```
 
 ## Repository layout
 
-- `frontend/` — Next.js (TypeScript, App Router, Tailwind CSS)
-- `backend/` — FastAPI API
+- `frontend/` - Next.js (TypeScript, App Router, Tailwind CSS)
+- `backend/` - FastAPI
+  - `app/api/` - thin HTTP routes
+  - `app/services/script_runner.py` - runs code in a subprocess
+  - `app/services/measurement_service.py` - wraps a run with CodeCarbon
+  - `app/services/rag_service.py` - knowledge base sync and search
+  - `app/services/ast_analyzer.py` - static pattern detection
+  - `app/services/llm_service.py` - the only code that calls the LLM
+  - `app/services/auditor.py`, `optimizer.py`, `verifier.py` - the three steps
+  - `app/services/comparison_service.py`, `pipeline.py` - measurement comparison and the full flow
+  - `app/knowledge_base/practices.json` - the green coding practices
 
 ## Prerequisites
 
 - Node.js 20+
 - Python 3.11+
+- An Anthropic API key for the audit and optimize steps.
+  Running and measuring works without one.
 
 ## Run the backend
 
 ```bash
 cd backend
 python -m venv .venv
-```
-
-On Windows, if `python` is not on PATH, use `py -3 -m venv .venv`.
-
-Windows:
-
-```bash
-.venv\Scripts\activate
-```
-
-macOS / Linux:
-
-```bash
-source .venv/bin/activate
-```
-
-```bash
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-copy .env.example .env
+cp .env.example .env             # Windows: copy .env.example .env
+# Set ANTHROPIC_API_KEY in .env
+python -m app.services.rag_service   # optional: download the embedding model and build the index now
 uvicorn app.main:app --reload --port 8000
 ```
 
-On macOS / Linux, use `cp .env.example .env` instead of `copy`.
-
-The API is available at [http://localhost:8000](http://localhost:8000). Health check: [http://localhost:8000/health](http://localhost:8000/health).
+The API runs at http://localhost:8000.
+Interactive docs are at http://localhost:8000/docs.
 
 ## Run the frontend
 
-In a second terminal:
-
 ```bash
 cd frontend
-copy .env.example .env.local
+cp .env.example .env.local
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Select a `.py` file and click **Execute Python**, or use **Check Backend** to confirm the API is reachable.
+Open http://localhost:3000.
 
-## Run backend tests
+## API
+
+| Method | Path | What it does |
+| --- | --- | --- |
+| GET | `/health` | Backend status and whether the LLM is configured |
+| POST | `/execute` | Run a `.py` file and measure it |
+| POST | `/rag/search` | Search green coding practices: `{"query": "...", "top_k": 3}` |
+| POST | `/audit` | Audit a `.py` file without running it |
+| POST | `/analyze` | The full flow, returning every step and the comparison |
+
+`/analyze` always returns what it finished.
+If a step stops the flow (for example the verifier rejects the optimized code), `stopped_reason` says why.
+
+## Tests and checks
 
 ```bash
-cd backend
-.venv\Scripts\activate
-pytest
+cd backend && pytest
+cd frontend && npm run lint && npm run typecheck
 ```
 
-## What Phase 2 includes
+Backend tests use a fake LLM, so they need no API key.
+RAG tests use the real embedding model, which is downloaded on the first run.
+Tests never check exact energy or CO₂ values.
 
-- Upload a Python `.py` file from the homepage
-- FastAPI `POST /execute` validates, saves a temporary copy, runs it in a subprocess, and returns stdout, stderr, exit code, and runtime
-- Execution timeout (default 5 seconds) and 1 MB upload limit
-- Backend tests for success, validation, errors, timeout, and temp-file cleanup
+## Measurement notes
 
-## Intentionally left for later phases
+- CodeCarbon estimates energy for the whole machine, not one process.
+  Measurements are run one at a time so scripts do not count each other's energy.
+- On machines without hardware power counters (for example macOS without `powermetrics`), CodeCarbon uses CPU load and a TDP estimate.
+  Energy is then mostly proportional to run time.
+- CO₂ uses the grid carbon intensity of `CODECARBON_COUNTRY_ISO_CODE`.
+- Short scripts are noisy.
+  Each version is measured `COMPARISON_RUNS` times, alternating, and medians are compared.
 
-CodeCarbon energy measurement, RAG / green coding practices, AI agent code suggestions, databases, Docker sandboxing, and authentication.
+## Safety notes
+
+Uploaded code runs in a separate process with a timeout, capped output, a temporary working directory, and no server secrets in its environment.
+This is not a sandbox: the code can still read files the server user can read, and can use the network.
+Do not expose this server to untrusted users without running it inside a container.
