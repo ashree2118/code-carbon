@@ -48,6 +48,10 @@ def _start_tracker() -> tuple[OfflineEmissionsTracker | None, str | None]:
             country_iso_code=settings.codecarbon_country_iso_code,
             output_methods=[],  # keep results in memory only; no emissions.csv
             log_level="error",
+            # We already serialize measurements with our own lock. CodeCarbon's
+            # lock file adds nothing, and a stale one (left by a killed server
+            # process) would make every later measurement silently return nothing.
+            allow_multiple_runs=True,
         )
         tracker.start()
         return tracker, None
@@ -63,7 +67,7 @@ def _stop_tracker(tracker: OfflineEmissionsTracker) -> tuple[CarbonMetrics | Non
         # as almost free. Take the final reading here so the whole run counts.
         tracker._measure_power_and_energy()
         tracker.stop()
-        data = tracker.final_emissions_data
+        data = getattr(tracker, "final_emissions_data", None)
         if data is None:
             return None, "CodeCarbon returned no data"
         return (

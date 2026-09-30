@@ -115,3 +115,28 @@ def test_codecarbon_is_warmed_up_once(monkeypatch: pytest.MonkeyPatch):
     assert len(created) == 2
     measure_script_execution(b"pass\n", 5)
     assert len(created) == 3
+
+
+def test_stale_codecarbon_lock_file_does_not_block_measurement(monkeypatch: pytest.MonkeyPatch):
+    from codecarbon.lock import Lock
+
+    # A killed server process can leave CodeCarbon's lock file behind, and
+    # config or older versions can disable multiple runs.
+    monkeypatch.setenv("CODECARBON_ALLOW_MULTIPLE_RUNS", "false")
+    stale = Lock()
+    stale.acquire()
+    try:
+        measured = measure_script_execution(b"print('ok')\n", 5)
+    finally:
+        stale.release()
+    assert measured.carbon is not None
+    assert measured.carbon_error is None
+
+
+def test_tracker_without_results_is_reported(monkeypatch: pytest.MonkeyPatch):
+    tracker = MagicMock(spec=["start", "stop", "_measure_power_and_energy"])
+    monkeypatch.setattr(measurement_service, "OfflineEmissionsTracker", lambda **kwargs: tracker)
+    measured = measure_script_execution(b"print('ok')\n", 5)
+    assert measured.run.success is True
+    assert measured.carbon is None
+    assert measured.carbon_error == "CodeCarbon returned no data"
