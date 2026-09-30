@@ -10,7 +10,7 @@ You then compare real measurements, not guesses.
 Python file
   → run in a subprocess + CodeCarbon measurement
   → AST analysis (finds patterns such as nested loops or string += in a loop)
-  → RAG: retrieve matching green coding practices (ChromaDB + sentence-transformers)
+  → RAG: retrieve matching green coding practices (BM25 keyword search)
   → Auditor (LLM): structured findings, no code changes
   → Optimizer (LLM): targeted changes for those findings
   → Verifier: code changed, compiles, runs, prints the same output
@@ -25,7 +25,7 @@ Python file
   - `app/api/` - thin HTTP routes
   - `app/services/script_runner.py` - runs code in a subprocess
   - `app/services/measurement_service.py` - wraps a run with CodeCarbon
-  - `app/services/rag_service.py` - knowledge base sync and search
+  - `app/services/rag_service.py` - keyword search over the knowledge base
   - `app/services/ast_analyzer.py` - static pattern detection
   - `app/services/llm_service.py` - the only code that calls the LLM
   - `app/services/auditor.py`, `optimizer.py`, `verifier.py` - the three steps
@@ -36,8 +36,9 @@ Python file
 
 - Node.js 20+
 - Python 3.11+
-- An Anthropic API key for the audit and optimize steps.
+- A Groq API key for the audit and optimize steps.
   Running and measuring works without one.
+  No model runs on your machine: the LLM runs on Groq, and search is plain keyword matching.
 
 ## Run the backend
 
@@ -47,8 +48,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env             # Windows: copy .env.example .env
-# Set ANTHROPIC_API_KEY in .env
-python -m app.services.rag_service   # optional: download the embedding model and build the index now
+# Set GROQ_API_KEY in .env
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -87,8 +87,15 @@ cd frontend && npm run lint && npm run typecheck
 ```
 
 Backend tests use a fake LLM, so they need no API key.
-RAG tests use the real embedding model, which is downloaded on the first run.
+RAG tests run the real keyword search against the real knowledge base.
 Tests never check exact energy or CO₂ values.
+
+## LLM
+
+The auditor and optimizer call Groq through the official `groq` SDK, in `app/services/llm_service.py`.
+Answers use Groq's strict JSON schema mode, so they always match the expected structure.
+Only some models support strict mode: `openai/gpt-oss-120b` (default) and `openai/gpt-oss-20b`.
+Set `LLM_MODEL` and `LLM_EFFORT` (`low`, `medium`, `high`) in `.env`.
 
 ## Measurement notes
 

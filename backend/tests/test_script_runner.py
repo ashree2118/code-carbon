@@ -69,8 +69,8 @@ def test_output_is_capped(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_server_secrets_are_not_passed_to_script(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "secret-value")
-    result = run_python_script(b"import os\nprint(os.environ.get('ANTHROPIC_API_KEY'))\n", 5)
+    monkeypatch.setenv("GROQ_API_KEY", "secret-value")
+    result = run_python_script(b"import os\nprint(os.environ.get('GROQ_API_KEY'))\n", 5)
     assert result.stdout.strip() == "None"
 
 

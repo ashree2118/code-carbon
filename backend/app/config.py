@@ -33,15 +33,11 @@ class Settings:
     comparison_runs: int = int(os.getenv("COMPARISON_RUNS", "3"))
 
     # RAG
-    chroma_db_dir: str = os.getenv("CHROMA_DB_DIR", str(BACKEND_DIR / "chroma_db"))
-    embedding_model_name: str = os.getenv(
-        "EMBEDDING_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2"
-    )
     rag_top_k: int = int(os.getenv("RAG_TOP_K", "3"))
 
-    # LLM
-    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
-    llm_model: str = os.getenv("LLM_MODEL", "claude-opus-5-5")
+    # LLM (Groq). The model must support strict JSON schema output.
+    groq_api_key: str = os.getenv("GROQ_API_KEY", "")
+    llm_model: str = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
     llm_effort: str = os.getenv("LLM_EFFORT", "high")
     llm_timeout_seconds: float = float(os.getenv("LLM_TIMEOUT_SECONDS", "300"))
 

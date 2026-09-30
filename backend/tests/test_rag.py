@@ -1,17 +1,17 @@
 import json
-import shutil
 from pathlib import Path
 
 import pytest
 
 from app.config import settings
 from app.schemas import PracticeResult
+from app.services.ast_analyzer import PATTERN_QUERIES
 from app.services.rag_service import (
-    PRACTICES_FILE,
     GreenCodingRAGService,
     RAGUnavailableError,
     get_rag_service,
     load_practices,
+    tokenize,
 )
 from app.main import app
 from tests.conftest import FakeRAG
@@ -37,50 +37,32 @@ def test_duplicate_ids_are_rejected(tmp_path: Path):
         load_practices(path)
 
 
-# Real embeddings and Chroma (uses the local model cache; first run downloads it)
+# Real keyword search
 
 
 @pytest.fixture(scope="module")
-def rag_dir(tmp_path_factory) -> Path:
-    return tmp_path_factory.mktemp("chroma")
+def rag() -> GreenCodingRAGService:
+    return GreenCodingRAGService()
 
 
-@pytest.fixture(scope="module")
-def rag(rag_dir: Path) -> GreenCodingRAGService:
-    service = GreenCodingRAGService(persist_dir=str(rag_dir))
-    report = service.sync()
-    assert report.added == report.total == len(load_practices())
-    return service
-
-
-def test_sync_twice_does_not_duplicate(rag: GreenCodingRAGService):
-    report = rag.sync()
-    assert (report.added, report.updated, report.removed) == (0, 0, 0)
-    assert len(rag._get_vectorstore().get()["ids"]) == report.total
-
-
-def test_store_persists_across_service_instances(rag: GreenCodingRAGService, rag_dir: Path):
-    reopened = GreenCodingRAGService(persist_dir=str(rag_dir))
-    report = reopened.sync()
-    assert report.added == 0 and report.total == len(load_practices())
-
-
-def test_changed_knowledge_base_is_resynced(tmp_path: Path):
-    practices_file = tmp_path / "practices.json"
-    shutil.copy(PRACTICES_FILE, practices_file)
-    service = GreenCodingRAGService(persist_dir=str(tmp_path / "db"), practices_file=practices_file)
-    service.sync()
-
-    data = json.loads(practices_file.read_text())
-    data[0]["content"] += " Edited."
-    removed_id = data.pop()["id"]
-    data.append({"id": "NEW-1", "title": "New practice", "category": "Test", "content": "Brand new content."})
-    practices_file.write_text(json.dumps(data))
-
-    report = GreenCodingRAGService(persist_dir=str(tmp_path / "db"), practices_file=practices_file).sync()
-    assert (report.added, report.updated, report.removed) == (1, 1, 1)
-    ids = service._get_vectorstore().get()["ids"]
-    assert removed_id not in ids and "NEW-1" in ids and len(ids) == len(data)
+def test_every_ast_pattern_query_finds_its_practice(rag: GreenCodingRAGService):
+    # The auditor searches with these exact queries, so each must hit the right practice.
+    expected = {
+        "nested_loop": "GCP-001",
+        "linear_search_in_loop": "GCP-002",
+        "invariant_call_in_loop": "GCP-003",
+        "append_loop": "GCP-004",
+        "string_concat_in_loop": "GCP-005",
+        "list_in_aggregate": "GCP-007",
+        "uncached_recursion": "GCP-008",
+        "file_io_in_loop": "GCP-009",
+        "regex_in_loop": "GCP-011",
+        "pandas_row_iteration": "GCP-013",
+        "queue_pop_front": "GCP-015",
+    }
+    assert expected.keys() == PATTERN_QUERIES.keys()
+    for kind, query in PATTERN_QUERIES.items():
+        assert rag.search(query)[0].id == expected[kind], kind
 
 
 @pytest.mark.parametrize(
@@ -108,7 +90,7 @@ def test_search_result_shape_and_top_k(rag: GreenCodingRAGService):
     assert len(results) == 5
     scores = [r.relevance_score for r in results]
     assert scores == sorted(scores, reverse=True)
-    assert all(0 <= s <= 1 for s in scores)
+    assert scores[0] == 1.0 and all(0 < s <= 1 for s in scores)
     assert all(r.title and r.content and r.category for r in results)
 
 
@@ -116,10 +98,19 @@ def test_empty_query_returns_nothing(rag: GreenCodingRAGService):
     assert rag.search("   ") == []
 
 
-def test_broken_embedding_model_raises_rag_error(tmp_path: Path):
-    service = GreenCodingRAGService(persist_dir=str(tmp_path), embedding_model_name="/no/such/model")
+def test_query_with_no_matching_words_returns_nothing(rag: GreenCodingRAGService):
+    assert rag.search("zebra giraffe") == []
+
+
+def test_tokenize_normalizes_plurals_and_drops_stop_words():
+    assert tokenize("The loops and files in a list") == ["loop", "file", "list"]
+
+
+def test_bad_knowledge_base_raises_rag_error(tmp_path: Path):
+    path = tmp_path / "practices.json"
+    path.write_text("not json")
     with pytest.raises(RAGUnavailableError):
-        service.search("loops")
+        GreenCodingRAGService(practices_file=path).search("loops")
 
 
 # Endpoint

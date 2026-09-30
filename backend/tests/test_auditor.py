@@ -106,7 +106,7 @@ def test_audit_endpoint_without_llm_key(client):
     app.dependency_overrides[get_rag_service] = lambda: FakeRAG()
     response = upload(client, "/audit", SOURCE.encode())
     assert response.status_code == 503
-    assert "ANTHROPIC_API_KEY" in response.json()["detail"]
+    assert "GROQ_API_KEY" in response.json()["detail"]
 
 
 @pytest.mark.parametrize(

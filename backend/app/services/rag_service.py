@@ -1,38 +1,34 @@
-"""Retrieve green coding practices with embeddings stored in ChromaDB.
+"""Retrieve green coding practices with BM25 keyword search.
 
-The knowledge base lives in knowledge_base/practices.json. On first use the
-service syncs it into a persistent Chroma collection: new or edited practices
-are (re)embedded, removed ones are deleted, and unchanged ones are left alone.
-Each practice is stored under its own id, so syncing never creates duplicates.
-
-Run `python -m app.services.rag_service` to sync ahead of time (this also
-downloads the embedding model on first run).
+The knowledge base is knowledge_base/practices.json. It is small (about 20
+short practices), so an in-memory BM25 index built on first use is enough.
+No embedding model and no vector database are needed.
 """
 
-import hashlib
-import json
-import logging
+import math
 import re
 import threading
+from collections import Counter
 from pathlib import Path
 
-import chromadb
-from chromadb.config import Settings as ChromaSettings
-from langchain_chroma import Chroma
-from langchain_core.documents import Document
-from langchain_huggingface import HuggingFaceEmbeddings
 from pydantic import BaseModel, TypeAdapter
 
-from app.config import BACKEND_DIR, settings
+from app.config import settings
 from app.schemas import PracticeResult
-
-logger = logging.getLogger(__name__)
 
 PRACTICES_FILE = Path(__file__).resolve().parent.parent / "knowledge_base" / "practices.json"
 
+_TOKEN_RE = re.compile(r"[a-z0-9_]+")
+_STOP_WORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "can", "do", "does", "each",
+    "for", "from", "has", "if", "in", "instead", "into", "is", "it", "its", "of",
+    "on", "one", "or", "same", "so", "such", "than", "that", "the", "then", "this",
+    "to", "use", "used", "when", "which", "while", "with", "you", "your",
+}
+
 
 class RAGUnavailableError(RuntimeError):
-    """The vector store or embedding model could not be used."""
+    """The knowledge base could not be loaded."""
 
 
 class Practice(BaseModel):
@@ -40,17 +36,6 @@ class Practice(BaseModel):
     title: str
     category: str
     content: str
-
-    def fingerprint(self) -> str:
-        payload = json.dumps(self.model_dump(), sort_keys=True)
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-class SyncReport(BaseModel):
-    added: int
-    updated: int
-    removed: int
-    total: int
 
 
 def load_practices(path: Path = PRACTICES_FILE) -> list[Practice]:
@@ -62,122 +47,91 @@ def load_practices(path: Path = PRACTICES_FILE) -> list[Practice]:
     return practices
 
 
-def _collection_name(model_name: str) -> str:
-    # One collection per embedding model: vectors from different models
-    # cannot be mixed, and their dimensions may differ.
-    slug = re.sub(r"[^a-zA-Z0-9]+", "-", model_name.split("/")[-1]).strip("-").lower()
-    return f"green-practices-{slug}"[:63]
+def tokenize(text: str) -> list[str]:
+    tokens = []
+    for token in _TOKEN_RE.findall(text.lower()):
+        if token in _STOP_WORDS:
+            continue
+        # Light stemming so "loops" matches "loop" and "files" matches "file".
+        if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+            token = token[:-1]
+        tokens.append(token)
+    return tokens
+
+
+class BM25Index:
+    """Okapi BM25 over a fixed list of tokenized documents."""
+
+    def __init__(self, documents: list[list[str]], k1: float = 1.5, b: float = 0.75) -> None:
+        self._k1 = k1
+        self._b = b
+        self._term_counts = [Counter(doc) for doc in documents]
+        self._lengths = [len(doc) for doc in documents]
+        self._avg_length = sum(self._lengths) / max(len(documents), 1)
+        doc_freq = Counter(term for doc in documents for term in set(doc))
+        n = len(documents)
+        self._idf = {
+            term: math.log(1 + (n - freq + 0.5) / (freq + 0.5)) for term, freq in doc_freq.items()
+        }
+
+    def scores(self, query: list[str]) -> list[float]:
+        results = []
+        for counts, length in zip(self._term_counts, self._lengths):
+            score = 0.0
+            for term in query:
+                tf = counts.get(term, 0)
+                if tf:
+                    norm = self._k1 * (1 - self._b + self._b * length / self._avg_length)
+                    score += self._idf[term] * tf * (self._k1 + 1) / (tf + norm)
+            results.append(score)
+        return results
 
 
 class GreenCodingRAGService:
-    def __init__(
-        self,
-        persist_dir: str | None = None,
-        embedding_model_name: str | None = None,
-        practices_file: Path = PRACTICES_FILE,
-    ) -> None:
-        persist_path = Path(persist_dir or settings.chroma_db_dir)
-        if not persist_path.is_absolute():
-            persist_path = BACKEND_DIR / persist_path
-        self._persist_dir = persist_path
-        self._model_name = embedding_model_name or settings.embedding_model_name
+    def __init__(self, practices_file: Path = PRACTICES_FILE) -> None:
         self._practices_file = practices_file
-        self._vectorstore: Chroma | None = None
+        self._practices: list[Practice] | None = None
+        self._index: BM25Index | None = None
         self._lock = threading.Lock()
 
-    def _open_vectorstore(self) -> Chroma:
-        embeddings = HuggingFaceEmbeddings(
-            model_name=self._model_name,
-            encode_kwargs={"normalize_embeddings": True},
-        )
-        client = chromadb.PersistentClient(
-            path=str(self._persist_dir),
-            settings=ChromaSettings(anonymized_telemetry=False),
-        )
-        return Chroma(
-            client=client,
-            collection_name=_collection_name(self._model_name),
-            embedding_function=embeddings,
-            collection_configuration={"hnsw": {"space": "cosine"}},
-        )
-
-    def _sync(self, vectorstore: Chroma) -> SyncReport:
-        practices = {p.id: p for p in load_practices(self._practices_file)}
-        stored = vectorstore.get(include=["metadatas"])
-        stored_fingerprints = {
-            doc_id: (meta or {}).get("fingerprint")
-            for doc_id, meta in zip(stored["ids"], stored["metadatas"])
-        }
-
-        removed = [doc_id for doc_id in stored_fingerprints if doc_id not in practices]
-        changed = [
-            p for p in practices.values() if stored_fingerprints.get(p.id) != p.fingerprint()
-        ]
-        updated = [p.id for p in changed if p.id in stored_fingerprints]
-
-        stale = removed + updated
-        if stale:
-            vectorstore.delete(ids=stale)
-        if changed:
-            vectorstore.add_documents(
-                [
-                    Document(
-                        page_content=f"{p.title}. {p.category}. {p.content}",
-                        metadata={**p.model_dump(), "fingerprint": p.fingerprint()},
-                    )
-                    for p in changed
-                ],
-                ids=[p.id for p in changed],
-            )
-
-        report = SyncReport(
-            added=len(changed) - len(updated),
-            updated=len(updated),
-            removed=len(removed),
-            total=len(practices),
-        )
-        if changed or removed:
-            logger.info("Synced green coding practices: %s", report)
-        return report
-
-    def sync(self) -> SyncReport:
-        """Open the store if needed and bring it in line with practices.json."""
+    def _load(self) -> tuple[list[Practice], BM25Index]:
         with self._lock:
-            try:
-                vectorstore = self._vectorstore or self._open_vectorstore()
-                report = self._sync(vectorstore)
-            except Exception as exc:
-                raise RAGUnavailableError(f"Knowledge base is unavailable: {exc}") from exc
-            self._vectorstore = vectorstore
-            return report
-
-    def _get_vectorstore(self) -> Chroma:
-        if self._vectorstore is None:
-            self.sync()
-        assert self._vectorstore is not None
-        return self._vectorstore
+            if self._practices is None or self._index is None:
+                try:
+                    practices = load_practices(self._practices_file)
+                except Exception as exc:
+                    raise RAGUnavailableError(f"Knowledge base is unavailable: {exc}") from exc
+                # The title is repeated so title words weigh more than body words.
+                documents = [
+                    tokenize(f"{p.title} {p.title} {p.category} {p.content}") for p in practices
+                ]
+                self._practices, self._index = practices, BM25Index(documents)
+            return self._practices, self._index
 
     def search(self, query: str, top_k: int | None = None) -> list[PracticeResult]:
-        query = query.strip()
-        if not query:
+        """Best matches first. relevance_score is relative to the best match (1.0)."""
+        terms = tokenize(query)
+        if not terms:
             return []
-        k = top_k or settings.rag_top_k
+        practices, index = self._load()
 
-        vectorstore = self._get_vectorstore()
-        try:
-            hits = vectorstore.similarity_search_with_relevance_scores(query, k=k)
-        except Exception as exc:
-            raise RAGUnavailableError(f"Knowledge base search failed: {exc}") from exc
-
+        ranked = sorted(
+            ((score, p) for score, p in zip(index.scores(terms), practices) if score > 0),
+            key=lambda pair: pair[0],
+            reverse=True,
+        )[: top_k or settings.rag_top_k]
+        if not ranked:
+            return []
+        best = ranked[0][0]
         return [
             PracticeResult(
-                id=doc.metadata["id"],
-                title=doc.metadata["title"],
-                content=doc.metadata["content"],
-                category=doc.metadata["category"],
-                relevance_score=round(min(max(score, 0.0), 1.0), 4),
+                id=p.id,
+                title=p.title,
+                content=p.content,
+                category=p.category,
+                relevance_score=round(score / best, 4),
             )
-            for doc, score in hits
+            for score, p in ranked
         ]
 
 
@@ -186,8 +140,3 @@ rag_service = GreenCodingRAGService()
 
 def get_rag_service() -> GreenCodingRAGService:
     return rag_service
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    print(rag_service.sync())

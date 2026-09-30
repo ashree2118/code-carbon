@@ -39,7 +39,7 @@ class FakeRAG:
 
 @pytest.fixture(autouse=True)
 def no_real_llm_key(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(settings, "anthropic_api_key", "")
+    monkeypatch.setattr(settings, "groq_api_key", "")
 
 
 @pytest.fixture

@@ -11,5 +11,5 @@ def health() -> HealthResponse:
     return HealthResponse(
         status="ok",
         message="API is running",
-        llm_configured=bool(settings.anthropic_api_key),
+        llm_configured=bool(settings.groq_api_key),
     )
