@@ -10,16 +10,52 @@ import logging
 import threading
 from dataclasses import dataclass
 
+import codecarbon.emissions_tracker as _cc_tracker_module
 from codecarbon import OfflineEmissionsTracker
 
 from app.config import settings
 from app.schemas import CarbonMetrics, ExecuteResponse
-from app.services.script_runner import ScriptRunResult, run_python_script
+from app.services.script_runner import (
+    ScriptRunResult,
+    execution_lock,
+    prepare_sandbox,
+    run_python_script,
+)
 
 logger = logging.getLogger(__name__)
 
 _measurement_lock = threading.Lock()
 _warmed_up = False
+
+
+def _install_safe_physical_cpu_count() -> None:
+    """CodeCarbon 3.3.1 counts CPU sockets on Windows by launching `powershell`
+    and only handles some of the errors that can raise. When PowerShell is not on
+    PATH it raises FileNotFoundError inside start(), whose @suppress decorator
+    swallows it: the tracker never starts and every run reports no carbon data.
+    Fall back to one socket, the same value CodeCarbon uses for its other errors.
+    """
+    original = _cc_tracker_module.count_physical_cpus
+    if getattr(original, "_cfo_safe", False):
+        return
+
+    warned = False
+
+    def safe_count_physical_cpus() -> int:
+        nonlocal warned
+        try:
+            return original()
+        except Exception as exc:
+            if not warned:
+                logger.warning("Could not count physical CPUs (%s); assuming 1", exc)
+                warned = True
+            return 1
+
+    safe_count_physical_cpus._cfo_safe = True  # type: ignore[attr-defined]
+    _cc_tracker_module.count_physical_cpus = safe_count_physical_cpus
+
+
+_install_safe_physical_cpu_count()
 
 
 @dataclass
@@ -46,6 +82,7 @@ def _start_tracker() -> tuple[OfflineEmissionsTracker | None, str | None]:
         tracker = OfflineEmissionsTracker(
             project_name="uploaded_script",
             country_iso_code=settings.codecarbon_country_iso_code,
+            measure_power_secs=settings.codecarbon_measure_power_secs,
             output_methods=[],  # keep results in memory only; no emissions.csv
             log_level="error",
             # We already serialize measurements with our own lock. CodeCarbon's
@@ -54,6 +91,10 @@ def _start_tracker() -> tuple[OfflineEmissionsTracker | None, str | None]:
             allow_multiple_runs=True,
         )
         tracker.start()
+        # start() is wrapped in @suppress(Exception) and fails silently, so
+        # check that it really started instead of finding out at stop().
+        if getattr(tracker, "_start_time", None) is None:
+            return None, "CodeCarbon could not start tracking (see server logs)"
         return tracker, None
     except Exception as exc:
         logger.warning("Could not start CodeCarbon tracker: %s", exc)
@@ -91,7 +132,11 @@ def _warm_up() -> None:
 
 
 def measure_script_execution(source: bytes, timeout_seconds: float) -> MeasuredRun:
-    with _measurement_lock:
+    """Raises SandboxUnavailableError if the configured sandbox cannot run scripts."""
+    with _measurement_lock, execution_lock:
+        # Start the sandbox container (if any) before tracking begins, so its
+        # startup is not counted as the script's energy.
+        prepare_sandbox()
         _warm_up()
         carbon: CarbonMetrics | None = None
         tracker, carbon_error = _start_tracker()

@@ -134,9 +134,45 @@ def test_stale_codecarbon_lock_file_does_not_block_measurement(monkeypatch: pyte
 
 
 def test_tracker_without_results_is_reported(monkeypatch: pytest.MonkeyPatch):
-    tracker = MagicMock(spec=["start", "stop", "_measure_power_and_energy"])
+    tracker = MagicMock(spec=["start", "stop", "_measure_power_and_energy", "_start_time"])
+    tracker._start_time = 1.0
     monkeypatch.setattr(measurement_service, "OfflineEmissionsTracker", lambda **kwargs: tracker)
     measured = measure_script_execution(b"print('ok')\n", 5)
     assert measured.run.success is True
     assert measured.carbon is None
     assert measured.carbon_error == "CodeCarbon returned no data"
+
+
+def test_tracker_that_silently_fails_to_start_is_reported(monkeypatch: pytest.MonkeyPatch):
+    # CodeCarbon's start() swallows its own exceptions and leaves _start_time unset.
+    tracker = MagicMock(spec=["start", "stop", "_measure_power_and_energy", "_start_time"])
+    tracker._start_time = None
+    monkeypatch.setattr(measurement_service, "OfflineEmissionsTracker", lambda **kwargs: tracker)
+    measured = measure_script_execution(b"print('ok')\n", 5)
+    assert measured.run.success is True
+    assert measured.carbon is None
+    assert "could not start" in measured.carbon_error
+    tracker.stop.assert_not_called()
+
+
+def test_missing_powershell_does_not_break_codecarbon(monkeypatch: pytest.MonkeyPatch):
+    """Regression: CodeCarbon raised FileNotFoundError when `powershell` was not
+    on PATH, so start() silently failed and no carbon data was ever returned."""
+    import platform
+    import subprocess
+
+    real_run = subprocess.run
+
+    def no_powershell(cmd, *args, **kwargs):
+        if cmd and cmd[0] == "powershell":
+            raise FileNotFoundError("powershell")
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", no_powershell)
+    with monkeypatch.context() as windows:
+        windows.setattr(platform, "system", lambda: "Windows")
+        assert measurement_service._cc_tracker_module.count_physical_cpus() == 1
+
+    measured = measure_script_execution(b"print(sum(range(10**6)))\n", 10)
+    assert measured.carbon_error is None
+    assert measured.carbon is not None and measured.carbon.energy_kwh > 0

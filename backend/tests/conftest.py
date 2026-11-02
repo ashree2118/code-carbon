@@ -25,6 +25,8 @@ class FakeLLM:
 
 
 class FakeRAG:
+    retriever_name = "fake"
+
     def __init__(self, results=None, error: Exception | None = None) -> None:
         self.results = results or []
         self.error = error
@@ -40,6 +42,13 @@ class FakeRAG:
 @pytest.fixture(autouse=True)
 def no_real_llm_key(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "groq_api_key", "")
+
+
+@pytest.fixture(autouse=True)
+def subprocess_sandbox_by_default(monkeypatch: pytest.MonkeyPatch):
+    """Most tests run scripts as plain subprocesses (fast, no Docker needed).
+    tests/test_docker_sandbox.py covers the Docker backend."""
+    monkeypatch.setattr(settings, "execution_sandbox", "subprocess")
 
 
 @pytest.fixture

@@ -98,4 +98,5 @@ def audit_code(source: str, llm: LLMClient, rag: GreenCodingRAGService) -> Audit
         findings=_clean_findings(report.findings, len(source.splitlines())),
         detected_patterns=patterns,
         practices=practices,
+        retriever=getattr(rag, "retriever_name", "unknown"),
     )

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AuditReport } from "@/components/AuditReport";
+import { AuditReport, GreenPractices } from "@/components/AuditReport";
 import { CodeChanges } from "@/components/CodeChanges";
 import { Comparison } from "@/components/Comparison";
 import { ExecutionResult } from "@/components/ExecutionResult";
@@ -141,7 +141,15 @@ function HealthLine({ health }: { health: Health }) {
       </p>
     );
   }
-  return <p className="text-sm text-emerald-700">Backend and LLM are ready.</p>;
+  return (
+    <p className="text-sm text-emerald-700">
+      Backend and LLM are ready. Uploaded code runs in{" "}
+      {health.data.execution_sandbox === "docker"
+        ? "an isolated Docker container"
+        : "a local subprocess (not sandboxed)"}
+      .
+    </p>
+  );
 }
 
 function AnalysisResults({ analysis }: { analysis: AnalyzeResponse }) {
@@ -160,6 +168,7 @@ function AnalysisResults({ analysis }: { analysis: AnalyzeResponse }) {
       )}
       <ExecutionResult step={next()} title="Original run" result={analysis.original_execution} />
       {analysis.audit && <AuditReport step={next()} audit={analysis.audit} />}
+      {analysis.audit && <GreenPractices step={next()} audit={analysis.audit} />}
       {analysis.optimization && (
         <Optimization step={next()} optimization={analysis.optimization} />
       )}

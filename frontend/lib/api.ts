@@ -5,6 +5,7 @@ export type HealthResponse = {
   status: string;
   message: string;
   llm_configured: boolean;
+  execution_sandbox: "docker" | "subprocess";
 };
 
 export type CarbonMetrics = {
@@ -33,6 +34,8 @@ export type PracticeResult = {
 
 export type RAGSearchResponse = {
   query: string;
+  /** "vector" (Sentence Transformers + ChromaDB) or "keyword" (BM25 fallback) */
+  retriever: string;
   results: PracticeResult[];
 };
 
@@ -60,6 +63,7 @@ export type AuditResponse = {
   findings: AuditFinding[];
   detected_patterns: DetectedPattern[];
   practices: PracticeResult[];
+  retriever: string;
 };
 
 export type OptimizationResult = {

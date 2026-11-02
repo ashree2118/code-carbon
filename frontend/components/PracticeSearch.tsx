@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { searchPractices, type PracticeResult } from "@/lib/api";
+import { searchPractices, type RAGSearchResponse } from "@/lib/api";
+import { describeRetriever, PracticeCard } from "./AuditReport";
 
 export function PracticeSearch() {
   const [query, setQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState("");
-  const [results, setResults] = useState<PracticeResult[] | null>(null);
+  const [results, setResults] = useState<RAGSearchResponse | null>(null);
 
   async function handleSearch(event: React.FormEvent) {
     event.preventDefault();
@@ -17,7 +18,7 @@ export function PracticeSearch() {
     setError("");
     try {
       const data = await searchPractices(query);
-      setResults(data.results);
+      setResults(data);
     } catch (err) {
       setResults(null);
       setError(err instanceof Error ? err.message : "Search failed.");
@@ -53,25 +54,17 @@ export function PracticeSearch() {
         {error && <p className="text-sm text-red-700">{error}</p>}
 
         {results &&
-          (results.length === 0 ? (
+          (results.results.length === 0 ? (
             <p className="text-sm text-zinc-500">No matching practices found.</p>
           ) : (
-            <ul className="space-y-3">
-              {results.map((item) => (
-                <li key={item.id} className="space-y-1.5 rounded-lg border border-zinc-200 p-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
-                      {item.category}
-                    </span>
-                    <span className="font-mono text-xs text-zinc-500">
-                      Relevance {item.relevance_score.toFixed(2)}
-                    </span>
-                  </div>
-                  <h3 className="text-sm font-semibold text-zinc-900">{item.title}</h3>
-                  <p className="text-xs leading-relaxed text-zinc-600">{item.content}</p>
-                </li>
-              ))}
-            </ul>
+            <>
+              <p className="text-xs text-zinc-500">Found by {describeRetriever(results.retriever)}.</p>
+              <ul className="space-y-3">
+                {results.results.map((item) => (
+                  <PracticeCard key={item.id} practice={item} />
+                ))}
+              </ul>
+            </>
           ))}
       </div>
     </details>

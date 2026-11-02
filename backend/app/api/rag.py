@@ -13,6 +13,7 @@ def search_rag(
 ) -> RAGSearchResponse:
     try:
         results = rag.search(payload.query, top_k=payload.top_k)
+        retriever = rag.retriever_name
     except RAGUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
-    return RAGSearchResponse(query=payload.query, results=results)
+    return RAGSearchResponse(query=payload.query, retriever=retriever, results=results)

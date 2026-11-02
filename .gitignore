@@ -5,7 +5,12 @@ __pycache__/
 .venv/
 venv/
 .env
+.pytest_cache/
+# ChromaDB vector store (rebuilt automatically from practices.json)
+.chroma/
 
+# Local server logs
+*.log
 
 # Node / Next.js
 node_modules/

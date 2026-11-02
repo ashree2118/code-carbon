@@ -1,11 +1,17 @@
-"""Run untrusted Python source in a separate process.
+"""Run untrusted Python source outside the API process.
 
-The script never runs inside the FastAPI process and never goes through a shell.
-It gets its own temporary directory, a minimal environment (no server secrets),
-a hard timeout that kills the whole process tree, and capped output buffers.
+Two backends, chosen by EXECUTION_SANDBOX:
 
-This is process isolation, not a security sandbox: the script can still read
-files the server user can read. Use a container if that matters.
+- docker (default): a fresh, locked-down container per script. See
+  docker_sandbox.py.
+- subprocess: a child process on the host. It never goes through a shell and
+  gets its own temporary directory, a minimal environment (no server secrets),
+  a hard timeout that kills the whole process tree, and capped output buffers.
+  This is process isolation, not a security sandbox: the script can still read
+  files the server user can read.
+
+Both return the same ScriptRunResult. Every caller (execution, measurement,
+verification) goes through run_python_script.
 """
 
 import os
@@ -26,6 +32,12 @@ _READER_JOIN_SECONDS = 2.0
 # Environment variables the child may inherit. Everything else (API keys,
 # tokens, cloud credentials) is dropped.
 _INHERITED_ENV_VARS = ("PATH", "SYSTEMROOT", "LANG", "LC_ALL")
+
+# Only one script runs at a time. CodeCarbon measures the whole machine, so a
+# second script (for example a verifier run from another request) running during
+# a measurement would be counted in it. Re-entrant so the measurement service can
+# hold it around preparation, tracking and the run itself.
+execution_lock = threading.RLock()
 
 
 @dataclass
@@ -63,10 +75,8 @@ class _OutputCollector(threading.Thread):
             self._stream.close()
 
     def text(self) -> str:
-        text = self._data.decode("utf-8", errors="replace")
-        if self.truncated:
-            text += f"\n[output truncated after {self._limit} bytes]"
-        return text
+        # Line endings are normalized: on Windows the child writes "\r\n".
+        return _decode_output(bytes(self._data), self.truncated, self._limit)
 
 
 def _child_env(work_dir: str) -> dict[str, str]:
@@ -93,7 +103,58 @@ def _kill_process_tree(process: subprocess.Popen) -> None:
             process.kill()
 
 
+def _decode_output(data: bytes, truncated: bool, limit: int) -> str:
+    text = data.decode("utf-8", errors="replace").replace("\r\n", "\n")
+    if truncated:
+        text += f"\n[output truncated after {limit} bytes]"
+    return text
+
+
+def _with_timeout_note(stderr: str, timed_out: bool, timeout_seconds: float) -> str:
+    if not timed_out:
+        return stderr
+    note = f"Execution timed out after {timeout_seconds} seconds"
+    return f"{stderr.rstrip()}\n{note}".lstrip()
+
+
+def prepare_sandbox() -> None:
+    """Do any slow setup (starting a container) now, so it is not measured."""
+    if settings.execution_sandbox == "docker":
+        from app.services.docker_sandbox import get_docker_sandbox
+
+        with execution_lock:
+            get_docker_sandbox().prepare()
+
+
 def run_python_script(source: bytes, timeout_seconds: float) -> ScriptRunResult:
+    """Raises SandboxUnavailableError if the docker backend cannot be used."""
+    backend = settings.execution_sandbox
+    with execution_lock:
+        if backend == "docker":
+            return _run_in_docker(source, timeout_seconds)
+        if backend == "subprocess":
+            return _run_in_subprocess(source, timeout_seconds)
+    raise ValueError(f"Unknown EXECUTION_SANDBOX {backend!r}; use docker or subprocess")
+
+
+def _run_in_docker(source: bytes, timeout_seconds: float) -> ScriptRunResult:
+    from app.services.docker_sandbox import get_docker_sandbox
+
+    run = get_docker_sandbox().run(source, timeout_seconds)
+    limit = settings.max_output_bytes
+    return ScriptRunResult(
+        success=not run.timed_out and run.exit_code == 0,
+        stdout=_decode_output(run.stdout, run.stdout_truncated, limit),
+        stderr=_with_timeout_note(
+            _decode_output(run.stderr, run.stderr_truncated, limit), run.timed_out, timeout_seconds
+        ),
+        exit_code=None if run.timed_out else run.exit_code,
+        execution_time_seconds=round(run.elapsed_seconds, 4),
+        timed_out=run.timed_out,
+    )
+
+
+def _run_in_subprocess(source: bytes, timeout_seconds: float) -> ScriptRunResult:
     work_dir = tempfile.mkdtemp(prefix="cfo-exec-")
     try:
         script_path = os.path.join(work_dir, "script.py")
@@ -138,10 +199,7 @@ def run_python_script(source: bytes, timeout_seconds: float) -> ScriptRunResult:
         stdout.join(_READER_JOIN_SECONDS)
         stderr.join(_READER_JOIN_SECONDS)
 
-        stderr_text = stderr.text()
-        if timed_out:
-            note = f"Execution timed out after {timeout_seconds} seconds"
-            stderr_text = f"{stderr_text.rstrip()}\n{note}".lstrip()
+        stderr_text = _with_timeout_note(stderr.text(), timed_out, timeout_seconds)
 
         return ScriptRunResult(
             success=not timed_out and process.returncode == 0,

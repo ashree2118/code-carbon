@@ -72,6 +72,7 @@ def test_health_reports_llm_configuration(client, monkeypatch: pytest.MonkeyPatc
         "status": "ok",
         "message": "API is running",
         "llm_configured": False,
+        "execution_sandbox": "subprocess",
     }
     monkeypatch.setattr(settings, "groq_api_key", "test-key")
     assert client.get("/health").json()["llm_configured"] is True

@@ -6,6 +6,7 @@ from app.schemas import AuditReport, CarbonMetrics, OptimizationChange, Optimiza
 from app.services.comparison_service import compare, compare_metric
 from app.services.llm_service import LLMError, get_llm_client
 from app.services.measurement_service import MeasuredRun
+from app.services.pipeline import NODES, build_analysis_graph
 from app.services.rag_service import get_rag_service
 from app.services.script_runner import ScriptRunResult
 from tests.conftest import FakeLLM, FakeRAG, upload
@@ -107,6 +108,37 @@ def test_llm_failure_returns_partial_result(analyze):
     assert body["audit"] is not None
     assert body["optimization"] is None
     assert "model down" in body["stopped_reason"]
+
+
+def _visited_nodes(llm: FakeLLM, source: str = ORIGINAL) -> list[str]:
+    graph = build_analysis_graph(llm, FakeRAG())
+    return [node for update in graph.stream({"source": source}, stream_mode="updates") for node in update]
+
+
+def test_langgraph_has_the_agent_nodes_in_order():
+    graph = build_analysis_graph(FakeLLM({}), FakeRAG()).get_graph()
+    assert set(NODES) <= set(graph.nodes)
+    edges = {(e.source, e.target) for e in graph.edges}
+    assert ("__start__", "measure_original") in edges
+    assert ("measure_original", "audit") in edges
+    assert ("audit", "optimize") in edges and ("audit", "__end__") in edges
+    assert ("optimize", "verify") in edges and ("verify", "measure_and_compare") in edges
+
+
+def test_langgraph_runs_every_node_when_nothing_stops(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "comparison_runs", 1)
+    llm = FakeLLM({AuditReport: AUDIT, OptimizationResult: optimization(OPTIMIZED)})
+    assert _visited_nodes(llm) == list(NODES)
+
+
+def test_langgraph_stops_routing_after_a_stop_reason():
+    no_findings = FakeLLM({AuditReport: AuditReport(summary="Fine.", findings=[])})
+    assert _visited_nodes(no_findings) == ["measure_original", "audit"]
+
+    rejected = FakeLLM(
+        {AuditReport: AUDIT, OptimizationResult: optimization(OPTIMIZED.replace("print(hits)", "print(0)"))}
+    )
+    assert _visited_nodes(rejected) == ["measure_original", "audit", "optimize", "verify"]
 
 
 def test_analyze_without_llm_key(client):

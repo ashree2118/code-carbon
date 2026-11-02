@@ -11,7 +11,7 @@ from app.schemas import DetectedPattern
 
 # Query text used to retrieve matching green coding practices for each pattern.
 PATTERN_QUERIES: dict[str, str] = {
-    "nested_loop": "nested loops over collections, replace with dict or set lookups",
+    "nested_loop": "nested loop over two collections comparing items, quadratic O(n^2) work, use a dict or set lookup",
     "linear_search_in_loop": "membership test x in list, list.index or list.count inside a loop",
     "string_concat_in_loop": "string concatenation with += inside a loop, build with join",
     "append_loop": "list.append in a loop could be a list comprehension",

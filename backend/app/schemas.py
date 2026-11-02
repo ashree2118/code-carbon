@@ -7,6 +7,7 @@ class HealthResponse(BaseModel):
     status: str
     message: str
     llm_configured: bool
+    execution_sandbox: str
 
 
 # Execution and carbon
@@ -46,6 +47,8 @@ class PracticeResult(BaseModel):
 
 class RAGSearchResponse(BaseModel):
     query: str
+    # "vector" (Sentence Transformers + ChromaDB) or "keyword" (BM25 fallback)
+    retriever: str
     results: list[PracticeResult]
 
 
@@ -84,6 +87,7 @@ class AuditReport(BaseModel):
 class AuditResponse(AuditReport):
     detected_patterns: list[DetectedPattern]
     practices: list[PracticeResult]
+    retriever: str = "unknown"
 
 
 # Optimizer

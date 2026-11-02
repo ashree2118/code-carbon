@@ -12,4 +12,5 @@ def health() -> HealthResponse:
         status="ok",
         message="API is running",
         llm_configured=bool(settings.groq_api_key),
+        execution_sandbox=settings.execution_sandbox,
     )
